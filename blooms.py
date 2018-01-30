@@ -1,39 +1,95 @@
 import sys
 import math
+import asyncio
+import datetime
 import logging
 
 import bpy
 from mathutils import Matrix, Vector
 
 rootName = "bloom"
-frameCount = 144
 sphereRadius = 1
 lateralRotationMax = 80
 tangentialOrientation = True
 scaleMin = 0.04
 scaleMax = 0.12
+
 goldenAngle = 137.5077640
+longitudeIncrement = math.radians(goldenAngle)
+rotationLongitude = Matrix.Rotation(longitudeIncrement, 4, Vector((0, 0, 1)))
 
 log = logging.getLogger('blooms')
 
-class SpinStart(bpy.types.Operator):
+class Generate(bpy.types.Operator):
     bl_idname = "bloom.generate"
     bl_label = "Generate Bloom"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-        log.debug("generating..")
+        global blooms
+        blooms = context.scene.blooms
+        log.debug(str(blooms))
         generate();
         return {'FINISHED'}
 
+class Spin(bpy.types.Operator):
+    bl_idname = 'bloom.spin'
+    bl_label = 'Spin Bloom Async'
+
+    timer = None
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            context.window_manager.event_timer_remove(self.timer)
+            return {'CANCELLED'}
+
+        if event.type == 'TIMER':
+            transform = bpy.data.objects['bloom'].matrix_world
+            log.debug("matrix_world")
+            log.debug(transform)
+
+            transform = transform * rotationLongitude
+            log.debug("after transform")
+            log.debug(transform)
+
+            bpy.data.objects['bloom'].matrix_world = transform
+            log.debug("after setting")
+            log.debug(bpy.data.objects['bloom'].matrix_world)
+
+        return {'PASS_THROUGH'}
+
+    def execute(self, context):
+        self.timer = context.window_manager.event_timer_add(0.05, context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+
 def register():
-    bpy.utils.register_class(SpinStart)
+    bpy.utils.register_class(Generate)
+    bpy.utils.register_class(Spin)
 
 def unregister():
-    bpy.utils.unregister_class(SpinStart)
+    bpy.utils.unregister_class(Generate)
 
 if __name__ == "__main__":
     register()
+
+def spinToggle(self, context):
+    loop = asyncio.get_event_loop()
+#    log.debug("call_soon(spin())")
+    loop.create_task(spin())
+
+async def spin():
+    while True:
+        print(datetime.datetime.now())
+        await asyncio.sleep(1)
+
+def update(self, context):
+    global blooms
+    blooms = context.scene.blooms
+    log.debug(str(blooms))
+    if context.scene.blooms.live_update:
+        generate()
 
 def getHierarchyNames(name):
     names = []
@@ -72,9 +128,6 @@ def deleteHierarchy(name):
     bpy.ops.object.delete()
 
 class BloomTransformStrategy:
-    longitudeIncrement = math.radians(goldenAngle)
-    rotationLongitude = Matrix.Rotation(longitudeIncrement, 4, Vector((0, 0, 1)))
-
     frame = 0
     transformGlobal = Matrix.Translation(Vector((sphereRadius, 0, 0)))
     transformLocal = Matrix()
@@ -85,10 +138,10 @@ class BloomTransformStrategy:
     def step(self):
         self.frame = self.frame + 1
 
-        self.transformGlobal = self.rotationLongitude * self.transformGlobal
+        self.transformGlobal = rotationLongitude * self.transformGlobal
 
         lateralRotationAxis = (self.transformGlobal * Vector((0, -1, 0, 0))).xyz
-        rotationLatitude = Matrix.Rotation(1.0 / frameCount * math.radians(lateralRotationMax), 4, lateralRotationAxis)
+        rotationLatitude = Matrix.Rotation(1.0 / blooms.frame_count * math.radians(lateralRotationMax), 4, lateralRotationAxis)
         self.transformGlobal = rotationLatitude * self.transformGlobal
 
 
@@ -103,16 +156,16 @@ def cleanup():
         deleteHierarchy(rootName)
 
 def getColorForFrame(frame):
-    p = frame / (frameCount-1)
+    p = frame / (blooms.frame_count-1)
     return (0, p, 1-p)
 
 def getScaleForFrame(frame):
-    p = frame / (frameCount-1)
+    p = frame / (blooms.frame_count-1)
     scale = scaleMax - (scaleMax - scaleMin) * p
     return Matrix.Scale(scale, 4)
 
 def getRotationForFrame(frame):
-    p = frame / (frameCount-1)
+    p = frame / (blooms.frame_count-1)
 
     rotAngle = math.pi * 4 * p
     return Matrix.Rotation(rotAngle, 4, Vector((0, 1, 0)))
@@ -120,11 +173,10 @@ def getRotationForFrame(frame):
 def getNameForFrame(frame):
     return "frame" + str(frame)
 
-def update(self, context):
-    if context.scene.blooms.live_update:
-        generate()
-
 def generate():
+    log.debug("+++++++++")
+    log.debug(str(blooms))
+
     cleanup()
 
     bpy.ops.object.empty_add()
@@ -149,7 +201,7 @@ def createPetals():
     root = bpy.data.objects[rootName]
     strategy = BloomTransformStrategy()
 
-    for frame in range(0, frameCount):
+    for frame in range(0, blooms.frame_count):
         name = getNameForFrame(frame)
         bpy.ops.mesh.primitive_cube_add()
 
@@ -162,7 +214,6 @@ def createPetals():
         material.diffuse_color = getColorForFrame(frame)
         obj.active_material = material
 
-        # test
         scale = getScaleForFrame(frame)
         rotation = getRotationForFrame(frame)
         transform = strategy.getTransform() * scale * rotation

@@ -53,6 +53,7 @@ class BloomsProperties(PropertyGroup):
         name="spin",
         description='',
         default=False,
+        update=blooms.spinToggle
     )
 
     spin_fps = FloatProperty(
@@ -63,16 +64,14 @@ class BloomsProperties(PropertyGroup):
 
 def register():
     bpy.utils.register_class(BloomsProperties)
+    bpy.types.Scene.blooms = PointerProperty(type=BloomsProperties)
 
     blooms.register()
     ui.register()
 
-    bpy.types.Scene.blooms = PointerProperty(type=BloomsProperties)
-
 def unregister():
-    bpy.utils.unregister_class(BloomsProperties)
-
     ui.unregister()
     blooms.unregister()
 
     del bpy.types.Scene.blooms
+    bpy.utils.unregister_class(BloomsProperties)

@@ -21,8 +21,8 @@ class BloomsToolBar(Panel):
         row.prop(blooms, "frame_count", text="Frame Count")
 
         row = col.row(align=True)
-        row.operator("bloom.generate", text="Generate")
         row.prop(blooms, "live_update", text="Realtime (live) Update")
+        row.operator("bloom.generate", text="Generate")
 
 #        row = col.row(align=True)
 
@@ -31,7 +31,6 @@ class BloomsToolBar(Panel):
 
         row = col.row(align=True)
         row.prop(blooms, "spin", text="Spin")
-        row = col.row(align=True)
         row.prop(blooms, "spin_fps", text="FPS")
 
         #        row.operator("bloom.spin_toggle", text="Spin")
